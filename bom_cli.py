@@ -30,21 +30,62 @@ def main():
     parser.add_argument('--sample', '-s', action='store_true', help='Generate and use sample data')
     parser.add_argument('--clean', '-c', action='store_true', help='Generate clean sample data without issues')
     parser.add_argument('--save-sample', help='Save generated sample to a file')
+    parser.add_argument('--provider', choices=['openai', 'azure'], default='openai', help='API provider to use (openai or azure)')
+    parser.add_argument('--model', default='o3-mini', help='Model to use (default: o3-mini)')
+    parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint URL')
+    parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
+    parser.add_argument('--azure-api-version', default='2024-02-01', help='Azure OpenAI API version')
     
     args = parser.parse_args()
     
-    # Check for API key
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("⚠️ OpenAI API key not found in environment variables.")
-        print("Please set your API key using: export OPENAI_API_KEY='your-api-key'")
-        api_key = input("Or enter your OpenAI API key now: ").strip()
+    # Check for API key based on provider
+    if args.provider == 'azure':
+        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
         if not api_key:
-            print("No API key provided. Exiting.")
-            return
+            print("⚠️ Azure OpenAI API key not found in environment variables.")
+            print("Please set your API key using: export AZURE_OPENAI_API_KEY='your-api-key'")
+            api_key = input("Or enter your Azure OpenAI API key now: ").strip()
+            if not api_key:
+                print("No API key provided. Exiting.")
+                return
+                
+        # Check Azure-specific requirements
+        if not args.azure_endpoint:
+            if not os.environ.get("AZURE_OPENAI_ENDPOINT"):
+                args.azure_endpoint = input("Enter your Azure OpenAI endpoint URL: ").strip()
+                if not args.azure_endpoint:
+                    print("Azure endpoint URL is required when using Azure provider. Exiting.")
+                    return
+            else:
+                args.azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+                
+        if not args.azure_deployment:
+            args.azure_deployment = input("Enter your Azure OpenAI deployment name: ").strip()
+            if not args.azure_deployment:
+                print("Azure deployment name is required when using Azure provider. Exiting.")
+                return
+    else:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            print("⚠️ OpenAI API key not found in environment variables.")
+            print("Please set your API key using: export OPENAI_API_KEY='your-api-key'")
+            api_key = input("Or enter your OpenAI API key now: ").strip()
+            if not api_key:
+                print("No API key provided. Exiting.")
+                return
     
-    # Initialize the analyzer
-    analyzer = BOMAnalyzer(api_key)
+    # Initialize the analyzer with appropriate provider and settings
+    if args.provider == 'azure':
+        analyzer = BOMAnalyzer(
+            api_key=api_key,
+            model=args.model,
+            provider='azure',
+            azure_endpoint=args.azure_endpoint,
+            azure_deployment=args.azure_deployment,
+            azure_api_version=args.azure_api_version
+        )
+    else:
+        analyzer = BOMAnalyzer(api_key=api_key, model=args.model)
     
     # Determine the order data source
     order_data = None
