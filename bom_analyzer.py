@@ -1,10 +1,12 @@
 import json
 import os
 import csv
+import re
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Dict, Any, Optional, Literal, Tuple
 import pandas as pd
 from openai import OpenAI, AzureOpenAI
+
 
 # Sample data generation
 def generate_sample_orders(include_issues: bool = True) -> Dict[str, Any]:
@@ -84,6 +86,125 @@ def generate_sample_orders(include_issues: bool = True) -> Dict[str, Any]:
     problematic_order["items"] = problematic_items
     return problematic_order
 
+
+class ItemValidator:
+    """
+    Validates BOM item numbers against reference data and pattern rules.
+    """
+    def __init__(self, reference_file: Optional[str] = None):
+        """
+        Initialize the validator with optional reference data.
+        
+        Args:
+            reference_file: Path to CSV file with reference data
+        """
+        self.reference_items = {}
+        self.item_patterns = {
+            "PCB": r"^PCB-[A-Z]\d{4}$",            # PCB-X7700
+            "CAP": r"^CAP-\d{4}-\d{1,3}V$",        # CAP-3300-10V
+            "RES": r"^RES-\d+[KM]?-\d+\.\d+W$",    # RES-2K-0.25W
+            "IC": r"^IC-\d{4}[A-Z]?$",             # IC-8085
+            "CONN": r"^CONN-[A-Z0-9]+-[MF]$",      # CONN-DB9-F
+            "DIODE": r"^DIODE-\d{1}N\d{4}$",       # DIODE-1N4001
+        }
+        
+        if reference_file and os.path.exists(reference_file):
+            self.load_reference_data(reference_file)
+    
+    def load_reference_data(self, filename: str) -> None:
+        """
+        Load reference data from a CSV file.
+        
+        Expected CSV format:
+        item_number,description,category
+        """
+        try:
+            with open(filename, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    self.reference_items[row['item_number']] = {
+                        'description': row['description'],
+                        'category': row['category']
+                    }
+            print(f"Loaded {len(self.reference_items)} reference items")
+        except Exception as e:
+            print(f"Error loading reference data: {str(e)}")
+    
+    def validate_item_number(self, item_number: str) -> Tuple[bool, str]:
+        """
+        Validate an item number against patterns and reference data.
+        
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # Check if it exists in reference data
+        if item_number in self.reference_items:
+            return True, ""
+        
+        # Check if it matches any pattern
+        prefix = item_number.split('-')[0] if '-' in item_number else ""
+        
+        if prefix in self.item_patterns:
+            pattern = self.item_patterns[prefix]
+            if re.match(pattern, item_number):
+                return True, ""
+            else:
+                return False, f"Item number {item_number} does not match expected pattern {pattern}"
+        
+        return False, f"Unknown item number prefix: {prefix}"
+    
+    def suggest_correction(self, item_number: str) -> Optional[str]:
+        """
+        Suggest a correction for an invalid item number.
+        
+        Returns:
+            Suggested correct item number or None
+        """
+        prefix = item_number.split('-')[0] if '-' in item_number else ""
+        
+        # Simple correction for common prefixes
+        if prefix == "CONN" and not item_number.endswith("-M") and not item_number.endswith("-F"):
+            # Missing gender indicator
+            return f"{item_number}-F"
+        
+        # Check reference data for similar items
+        similar_items = []
+        for ref_item in self.reference_items:
+            if prefix in ref_item:
+                similar_items.append(ref_item)
+        
+        if similar_items:
+            return similar_items[0]  # Return first similar item
+        
+        return None
+    
+    def generate_reference_data(self, output_file: str) -> None:
+        """
+        Generate sample reference data file.
+        """
+        reference_data = [
+            ["item_number", "description", "category"],
+            ["PCB-X7700", "Main Circuit Board", "Electronics"],
+            ["CAP-3300-10V", "10V Capacitor", "Components"],
+            ["RES-2K-0.25W", "2K Ohm Resistor", "Components"],
+            ["IC-8085", "Microprocessor", "Electronics"],
+            ["CONN-DB9-F", "DB9 Female Connector", "Connectors"],
+            ["CONN-DB9-M", "DB9 Male Connector", "Connectors"],
+            ["DIODE-1N4001", "1A Diode", "Components"],
+            ["PCB-A1234", "Power Supply Board", "Electronics"],
+            ["CAP-2200-25V", "25V Capacitor", "Components"],
+            ["RES-10K-0.50W", "10K Ohm Resistor", "Components"]
+        ]
+        
+        try:
+            with open(output_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerows(reference_data)
+            print(f"Generated reference data saved to {output_file}")
+        except Exception as e:
+            print(f"Error generating reference data: {str(e)}")
+
+
 class BOMAnalyzer:
     def __init__(
         self, 
@@ -92,7 +213,8 @@ class BOMAnalyzer:
         provider: Literal["openai", "azure"] = "openai",
         azure_endpoint: Optional[str] = None,
         azure_deployment: Optional[str] = None,
-        azure_api_version: str = "2024-02-01"
+        azure_api_version: str = "2024-02-01",
+        reference_file: Optional[str] = None
     ):
         """
         Initialize the BOM Analyzer with API configuration.
@@ -104,6 +226,7 @@ class BOMAnalyzer:
             azure_endpoint: Azure OpenAI endpoint URL (required if provider is "azure")
             azure_deployment: Azure OpenAI deployment name (required if provider is "azure")
             azure_api_version: Azure OpenAI API version
+            reference_file: Path to CSV file with reference data for item validation
         """
         self.model = model
         self.provider = provider
@@ -121,11 +244,61 @@ class BOMAnalyzer:
         else:
             self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
             self.azure_deployment = None
+            
+        # Initialize item validator
+        self.item_validator = ItemValidator(reference_file)
     
-    def analyze_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_item_numbers(self, order_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Validate all item numbers in an order against reference data and patterns.
+        
+        Args:
+            order_data: BOM order data dictionary
+            
+        Returns:
+            List of validation issues found
+        """
+        validation_issues = []
+        
+        for item in order_data.get("items", []):
+            item_number = item.get("item_number")
+            if not item_number:
+                continue
+                
+            valid, error_message = self.item_validator.validate_item_number(item_number)
+            
+            if not valid:
+                line_id = item.get("line_id", "unknown")
+                suggestion = self.item_validator.suggest_correction(item_number)
+                
+                issue = {
+                    "issue_type": "Invalid Item Number",
+                    "location": f"Line ID {line_id}",
+                    "description": error_message,
+                    "severity": "medium",
+                    "recommendation": "Check and correct item number format" + 
+                                     (f" (suggested: {suggestion})" if suggestion else "")
+                }
+                validation_issues.append(issue)
+        
+        return validation_issues
+    
+    def analyze_order(self, order_data: Dict[str, Any], use_local_validation: bool = True) -> Dict[str, Any]:
         """
         Analyze BOM order data for discrepancies using OpenAI's o3-mini model.
+        
+        Args:
+            order_data: BOM order data dictionary
+            use_local_validation: Whether to use local item number validation
+            
+        Returns:
+            Analysis results dictionary
         """
+        # First perform local validation if enabled
+        validation_issues = []
+        if use_local_validation:
+            validation_issues = self.validate_item_numbers(order_data)
+        
         # Prepare the prompt for the model
         order_json = json.dumps(order_data, indent=2)
         
@@ -164,29 +337,51 @@ class BOMAnalyzer:
             # Handle different API providers
             if self.provider == "azure":
                 response = self.client.chat.completions.create(
-                    model=self.model, 
+                    model=self.azure_deployment,  # For Azure, use deployment name instead of model
                     messages=[
                         # {"role": "system", "content": "You are a BOM validator assistant that identifies issues in order data."},
                         {"role": "user", "content": prompt}
-                    ],
-                    max_completion_tokens=16384,
+                    ]
+                    # temperature=0.1  # Low temperature for more deterministic output
                 )
             else:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     reasoning_effort="medium",
                     messages=[
-                        {"role": "system", "content": "You are a BOM validator assistant that identifies issues in order data."},
+                        # {"role": "system", "content": "You are a BOM validator assistant that identifies issues in order data."},
                         {"role": "user", "content": prompt}
-                    ],
-                    max_completion_tokens=16384,
+                    ]
+                    # temperature=0.1  # Low temperature for more deterministic output
                 )
             
             # Extract and parse the JSON response
             result_text = response.choices[0].message.content
-            return json.loads(result_text)
+            ai_analysis = json.loads(result_text)
+            
+            # Combine AI analysis with local validation results
+            if validation_issues and ai_analysis.get("issues_found", False):
+                ai_analysis["analysis"].extend(validation_issues)
+                ai_analysis["total_issues"] = len(ai_analysis["analysis"])
+            elif validation_issues:
+                ai_analysis = {
+                    "issues_found": True,
+                    "total_issues": len(validation_issues),
+                    "analysis": validation_issues
+                }
+                
+            return ai_analysis
         
         except Exception as e:
+            # If there's an error with the API but we have validation results, return those
+            if validation_issues:
+                return {
+                    "issues_found": True,
+                    "total_issues": len(validation_issues),
+                    "analysis": validation_issues
+                }
+            
+            # Otherwise return an error
             return {
                 "issues_found": True,
                 "total_issues": 1,
@@ -268,43 +463,12 @@ class BOMAnalyzer:
                     })
         
         print(f"Analysis saved to CSV: {filename}")
-
-def main():
-    """
-    Main function to run the BOM Analyzer.
-    """
-    # Check for API key
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("⚠️ OpenAI API key not found in environment variables.")
-        print("Please set your API key using: export OPENAI_API_KEY='your-api-key'")
-        api_key = input("Or enter your OpenAI API key now: ").strip()
-        if not api_key:
-            print("No API key provided. Exiting.")
-            return
     
-    # Initialize the analyzer
-    analyzer = BOMAnalyzer(api_key)
-    
-    # Generate sample data
-    print("Generating sample BOM order data with issues...")
-    order_data = generate_sample_orders(include_issues=True)
-    
-    # Display the order data
-    print("\n📋 Sample BOM Order Data:")
-    print(json.dumps(order_data, indent=2))
-    
-    # Analyze the order
-    print("\n🔍 Analyzing BOM order data...")
-    analysis_results = analyzer.analyze_order(order_data)
-    
-    # Display the analysis report
-    print("\n📊 Analysis Report:")
-    report = analyzer.format_analysis_report(analysis_results)
-    print(report)
-    
-    print("\n🔧 Full Analysis Details:")
-    print(json.dumps(analysis_results, indent=2))
-
-if __name__ == "__main__":
-    main()
+    def generate_reference_data(self, output_file: str) -> None:
+        """
+        Generate sample reference data file.
+        
+        Args:
+            output_file: Path to save the generated reference data
+        """
+        self.item_validator.generate_reference_data(output_file)
