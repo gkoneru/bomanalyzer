@@ -1,6 +1,14 @@
-# BOM Order Analyzer
+### Using Azure OpenAI
 
-A Python application that analyzes Bill of Materials (BOM) order data for missing entries or discrepancies using OpenAI's o3-mini model.
+```bash
+# Single order analysis with Azure OpenAI
+python bom_cli.py --sample --provider azure --azure-endpoint "https://your-resource.openai.azure.com" --azure-deployment "your-deployment-name"
+
+# Batch processing with Azure OpenAI
+python batch_processor.py --input-dir ./sample_orders --provider azure --azure-deployment "your-deployment-name"
+```# BOM Order Analyzer
+
+A Python application that analyzes Bill of Materials (BOM) order data for missing entries or discrepancies using OpenAI's o3-mini model or Azure OpenAI Service.
 
 ## Features
 
@@ -11,6 +19,7 @@ A Python application that analyzes Bill of Materials (BOM) order data for missin
 - Provides detailed analysis reports with severity ratings
 - Suggests corrections for problematic entries
 - Command-line interface for batch processing
+- Supports both OpenAI and Azure OpenAI services
 
 ## Setup
 
@@ -25,14 +34,24 @@ A Python application that analyzes Bill of Materials (BOM) order data for missin
    pip install -r requirements.txt
    ```
 
-3. Set your OpenAI API key:
+3. Set your API key:
+
+   For OpenAI:
    ```
    export OPENAI_API_KEY='your-api-key'
    ```
 
+   For Azure OpenAI:
+   ```
+   export AZURE_OPENAI_API_KEY='your-azure-api-key'
+   export AZURE_OPENAI_ENDPOINT='https://your-resource-name.openai.azure.com'
+   ```
+
 ## Usage
 
-### Generate and Analyze Sample Data
+### Single Order Processing
+
+#### Generate and Analyze Sample Data
 
 ```bash
 python bom_cli.py --sample
@@ -73,6 +92,24 @@ python bom_cli.py --input your_order_file.json --output analysis_results.json --
 
 ```bash
 python item_validator.py
+```
+
+### Batch Processing
+
+Process multiple BOM order files at once:
+
+```bash
+# Generate 5 sample orders for testing
+python batch_processor.py --generate-samples 5
+
+# Process all orders in a directory
+python batch_processor.py --input-dir ./sample_orders --output-dir ./analysis_results
+
+# Create consolidated CSV report
+python batch_processor.py --input-dir ./sample_orders --csv consolidated_report.csv
+
+# Generate samples and process them in one command
+python batch_processor.py --generate-samples 10 --csv consolidated_report.csv
 ```
 
 ## Sample Order Data Structure
@@ -119,19 +156,29 @@ python item_validator.py
 ## Project Structure
 
 - `bom_analyzer.py` - Core BOM analysis functionality
-- `bom_cli.py` - Command-line interface
+- `bom_cli.py` - Command-line interface for single orders
+- `batch_processor.py` - Process multiple BOM orders in batch
 - `item_validator.py` - Item number validation utilities
 - `requirements.txt` - Python dependencies
 
 ## OpenAI Model Options
 
-This application uses OpenAI's o3-mini model by default, but you can configure it to use other models:
+This application supports multiple model options:
 
-| Model | Description | Use Case |
-|-------|-------------|----------|
-| o3-mini | Light and fast model with reasoning capabilities | Quick validation of BOM data |
+| Model | Provider | Description | Use Case |
+|-------|----------|-------------|----------|
+| o3-mini | OpenAI | Light and fast model with reasoning capabilities | Quick validation of BOM data |
+| o1-mini | OpenAI | Basic analytical model | Simple validation tasks |
+| GPT-4o | Azure OpenAI | Full featured model available on Azure | Enterprise-grade validation with Azure security compliance |
 
-To change the model, modify the `model` parameter in the `analyze_order` method in `bom_analyzer.py`.
+To specify the model and provider:
+```bash
+# For OpenAI
+python bom_cli.py --sample --provider openai --model o3-mini
+
+# For Azure OpenAI
+python bom_cli.py --sample --provider azure --model your-model --azure-endpoint "https://your-resource.openai.azure.com" --azure-deployment "your-deployment-name"
+```
 
 ## License
 
