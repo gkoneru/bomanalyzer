@@ -2,7 +2,11 @@ import json
 import os
 import argparse
 from typing import Dict, Any
+from dotenv import load_dotenv
 from bom_analyzer import BOMAnalyzer, generate_sample_orders
+
+# Load environment variables from .env file
+load_dotenv()
 
 def save_results(analysis: Dict[str, Any], filename: str) -> None:
     """Save analysis results to a JSON file."""
@@ -35,6 +39,9 @@ def main():
     parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint URL')
     parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
     parser.add_argument('--azure-api-version', default='2024-02-01', help='Azure OpenAI API version')
+    parser.add_argument('--reference-file', help='Path to reference data CSV file for item validation')
+    parser.add_argument('--generate-reference', help='Generate sample reference data to specified file')
+    parser.add_argument('--skip-local-validation', action='store_true', help='Skip local item validation (use only AI analysis)')
     
     args = parser.parse_args()
     
@@ -82,10 +89,22 @@ def main():
             provider='azure',
             azure_endpoint=args.azure_endpoint,
             azure_deployment=args.azure_deployment,
-            azure_api_version=args.azure_api_version
+            azure_api_version=args.azure_api_version,
+            reference_file=args.reference_file
         )
     else:
-        analyzer = BOMAnalyzer(api_key=api_key, model=args.model)
+        analyzer = BOMAnalyzer(
+            api_key=api_key, 
+            model=args.model,
+            reference_file=args.reference_file
+        )
+    
+    # Generate reference data if requested
+    if args.generate_reference:
+        analyzer.generate_reference_data(args.generate_reference)
+        print(f"Generated reference data. You can now use --reference-file={args.generate_reference}")
+        if not args.input and not args.sample and not args.clean:
+            return
     
     # Determine the order data source
     order_data = None
@@ -112,7 +131,10 @@ def main():
     
     # Analyze the order
     print("\n🔍 Analyzing BOM order data...")
-    analysis_results = analyzer.analyze_order(order_data)
+    analysis_results = analyzer.analyze_order(
+        order_data, 
+        use_local_validation=not args.skip_local_validation
+    )
     
     # Display the analysis report
     print("\n📊 Analysis Report:")
