@@ -6,6 +6,7 @@ python bom_cli.py --sample --provider azure --azure-endpoint "https://your-resou
 
 # Batch processing with Azure OpenAI
 python batch_processor.py --input-dir ./sample_orders --provider azure --azure-deployment "your-deployment-name"
+
 ```# BOM Order Analyzer
 
 A Python application that analyzes Bill of Materials (BOM) order data for missing entries or discrepancies using OpenAI's o3-mini model or Azure OpenAI Service.
