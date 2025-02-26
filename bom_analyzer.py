@@ -2,9 +2,9 @@ import json
 import os
 import csv
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 import pandas as pd
-from openai import OpenAI
+from openai import OpenAI, AzureOpenAI
 
 # Sample data generation
 def generate_sample_orders(include_issues: bool = True) -> Dict[str, Any]:
@@ -85,16 +85,42 @@ def generate_sample_orders(include_issues: bool = True) -> Dict[str, Any]:
     return problematic_order
 
 class BOMAnalyzer:
-    def __init__(self, api_key: Optional[str] = None, model: str = "o3-mini"):
+    def __init__(
+        self, 
+        api_key: Optional[str] = None, 
+        model: str = "o3-mini",
+        provider: Literal["openai", "azure"] = "openai",
+        azure_endpoint: Optional[str] = None,
+        azure_deployment: Optional[str] = None,
+        azure_api_version: str = "2024-02-01"
+    ):
         """
-        Initialize the BOM Analyzer with OpenAI API key.
+        Initialize the BOM Analyzer with API configuration.
         
         Args:
-            api_key: Your OpenAI API key
-            model: OpenAI model to use (default: "o3-mini")
+            api_key: Your API key (OpenAI or Azure OpenAI)
+            model: Model to use (default: "o3-mini")
+            provider: API provider to use ("openai" or "azure")
+            azure_endpoint: Azure OpenAI endpoint URL (required if provider is "azure")
+            azure_deployment: Azure OpenAI deployment name (required if provider is "azure")
+            azure_api_version: Azure OpenAI API version
         """
-        self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
         self.model = model
+        self.provider = provider
+        
+        if provider == "azure":
+            if not azure_endpoint or not azure_deployment:
+                raise ValueError("Azure endpoint and deployment name are required when using Azure OpenAI")
+                
+            self.client = AzureOpenAI(
+                api_key=api_key or os.environ.get("AZURE_OPENAI_API_KEY"),
+                api_version=azure_api_version,
+                azure_endpoint=azure_endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT")
+            )
+            self.azure_deployment = azure_deployment
+        else:
+            self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+            self.azure_deployment = None
     
     def analyze_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -135,14 +161,26 @@ class BOMAnalyzer:
         """
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                reasoning_effort="medium",
-                messages=[
-                    {"role": "system", "content": "You are a BOM validator assistant that identifies issues in order data."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
+            # Handle different API providers
+            if self.provider == "azure":
+                response = self.client.chat.completions.create(
+                    model=self.model, 
+                    messages=[
+                        # {"role": "system", "content": "You are a BOM validator assistant that identifies issues in order data."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_completion_tokens=16384,
+                )
+            else:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    reasoning_effort="medium",
+                    messages=[
+                        {"role": "system", "content": "You are a BOM validator assistant that identifies issues in order data."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_completion_tokens=16384,
+                )
             
             # Extract and parse the JSON response
             result_text = response.choices[0].message.content
