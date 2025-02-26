@@ -9,7 +9,16 @@ import glob
 from typing import List, Dict, Any
 from bom_analyzer import BOMAnalyzer, generate_sample_orders
 
-def process_batch(input_dir: str, output_dir: str, csv_report: str = None) -> None:
+def process_batch(
+    input_dir: str, 
+    output_dir: str, 
+    csv_report: str = None,
+    provider: str = 'openai',
+    model: str = 'o3-mini',
+    azure_endpoint: str = None,
+    azure_deployment: str = None,
+    azure_api_version: str = '2024-02-01'
+) -> None:
     """
     Process all JSON files in the input directory and save analysis results to the output directory.
     
@@ -17,22 +26,62 @@ def process_batch(input_dir: str, output_dir: str, csv_report: str = None) -> No
         input_dir: Directory containing BOM order JSON files
         output_dir: Directory to save analysis results
         csv_report: Optional CSV file to save consolidated report
+        provider: API provider to use ('openai' or 'azure')
+        model: Model to use (default: 'o3-mini')
+        azure_endpoint: Azure OpenAI endpoint URL
+        azure_deployment: Azure OpenAI deployment name
+        azure_api_version: Azure OpenAI API version
     """
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
-    # Check for API key
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("⚠️ OpenAI API key not found in environment variables.")
-        print("Please set your API key using: export OPENAI_API_KEY='your-api-key'")
-        api_key = input("Or enter your OpenAI API key now: ").strip()
+    # Check for API key based on provider
+    if provider == 'azure':
+        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
         if not api_key:
-            print("No API key provided. Exiting.")
-            return
+            print("⚠️ Azure OpenAI API key not found in environment variables.")
+            print("Please set your API key using: export AZURE_OPENAI_API_KEY='your-api-key'")
+            api_key = input("Or enter your Azure OpenAI API key now: ").strip()
+            if not api_key:
+                print("No API key provided. Exiting.")
+                return
+                
+        # Check Azure-specific requirements
+        if not azure_endpoint:
+            azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+            if not azure_endpoint:
+                azure_endpoint = input("Enter your Azure OpenAI endpoint URL: ").strip()
+                if not azure_endpoint:
+                    print("Azure endpoint URL is required when using Azure provider. Exiting.")
+                    return
+                
+        if not azure_deployment:
+            azure_deployment = input("Enter your Azure OpenAI deployment name: ").strip()
+            if not azure_deployment:
+                print("Azure deployment name is required when using Azure provider. Exiting.")
+                return
+    else:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            print("⚠️ OpenAI API key not found in environment variables.")
+            print("Please set your API key using: export OPENAI_API_KEY='your-api-key'")
+            api_key = input("Or enter your OpenAI API key now: ").strip()
+            if not api_key:
+                print("No API key provided. Exiting.")
+                return
     
-    # Initialize the analyzer
-    analyzer = BOMAnalyzer(api_key)
+    # Initialize the analyzer with appropriate provider and settings
+    if provider == 'azure':
+        analyzer = BOMAnalyzer(
+            api_key=api_key,
+            model=model,
+            provider='azure',
+            azure_endpoint=azure_endpoint,
+            azure_deployment=azure_deployment,
+            azure_api_version=azure_api_version
+        )
+    else:
+        analyzer = BOMAnalyzer(api_key=api_key, model=model)
     
     # Find all JSON files in the input directory
     json_files = glob.glob(os.path.join(input_dir, "*.json"))
@@ -121,6 +170,11 @@ def main():
     parser.add_argument('--csv', help='Save consolidated analysis to CSV report file')
     parser.add_argument('--generate-samples', '-g', type=int, help='Generate sample files (specify number)')
     parser.add_argument('--samples-dir', default='./sample_orders', help='Directory to save generated samples')
+    parser.add_argument('--provider', choices=['openai', 'azure'], default='openai', help='API provider to use (openai or azure)')
+    parser.add_argument('--model', default='o3-mini', help='Model to use (default: o3-mini)')
+    parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint URL')
+    parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
+    parser.add_argument('--azure-api-version', default='2024-02-01', help='Azure OpenAI API version')
     
     args = parser.parse_args()
     
@@ -133,7 +187,16 @@ def main():
     
     # Process batch if input directory is specified
     if args.input_dir:
-        process_batch(args.input_dir, args.output_dir, args.csv)
+        process_batch(
+            args.input_dir, 
+            args.output_dir, 
+            args.csv,
+            provider=args.provider,
+            model=args.model,
+            azure_endpoint=args.azure_endpoint,
+            azure_deployment=args.azure_deployment,
+            azure_api_version=args.azure_api_version
+        )
     else:
         parser.print_help()
 
