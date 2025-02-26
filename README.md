@@ -1,12 +1,3 @@
-### Using Azure OpenAI
-
-
-# Single order analysis with Azure OpenAI
-python bom_cli.py --sample --provider azure --azure-endpoint "https://your-resource.openai.azure.com" --azure-deployment "your-deployment-name"
-
-# Batch processing with Azure OpenAI
-python batch_processor.py --input-dir ./sample_orders --provider azure --azure-deployment "your-deployment-name"
-
 # BOM Order Analyzer
 
 A Python application that analyzes Bill of Materials (BOM) order data for missing entries or discrepancies using OpenAI's o3-mini model or Azure OpenAI Service.
@@ -47,6 +38,13 @@ A Python application that analyzes Bill of Materials (BOM) order data for missin
    export AZURE_OPENAI_API_KEY='your-azure-api-key'
    export AZURE_OPENAI_ENDPOINT='https://your-resource-name.openai.azure.com'
    ```
+### Using Azure OpenAI
+
+# Single order analysis with Azure OpenAI
+python bom_cli.py --sample --provider azure --azure-endpoint "https://your-resource.openai.azure.com" --azure-deployment "your-deployment-name"
+
+# Batch processing with Azure OpenAI
+python batch_processor.py --input-dir ./sample_orders --provider azure --azure-deployment "your-deployment-name"
 
 ## Usage
 
@@ -168,8 +166,7 @@ This application supports multiple model options:
 
 | Model | Provider | Description | Use Case |
 |-------|----------|-------------|----------|
-| o3-mini | OpenAI | Light and fast model with reasoning capabilities | Quick validation of BOM data |
-| o1-mini | OpenAI | Basic analytical model | Simple validation tasks |
+| o1-mini | Azure OpenAI | Basic analytical model | Simple validation tasks |
 | GPT-4o | Azure OpenAI | Full featured model available on Azure | Enterprise-grade validation with Azure security compliance |
 
 To specify the model and provider:
