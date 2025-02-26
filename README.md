@@ -1,6 +1,6 @@
 # BOM Order Analyzer
 
-A Python application that analyzes Bill of Materials (BOM) order data for missing entries or discrepancies using OpenAI's o3-mini model or Azure OpenAI Service.
+A Python application that analyzes Bill of Materials (BOM) order data for missing entries or discrepancies using OpenAI's o1-mini model or Azure OpenAI Service.
 
 ## Features
 
