@@ -1,13 +1,13 @@
-#!/usr/bin/env python3
-"""
-BOM Batch Processor - Process multiple BOM orders in a batch
-"""
 import os
 import json
 import argparse
 import glob
 from typing import List, Dict, Any
+from dotenv import load_dotenv
 from bom_analyzer import BOMAnalyzer, generate_sample_orders
+
+# Load environment variables from .env file
+load_dotenv()
 
 def process_batch(
     input_dir: str, 
@@ -17,7 +17,9 @@ def process_batch(
     model: str = 'o3-mini',
     azure_endpoint: str = None,
     azure_deployment: str = None,
-    azure_api_version: str = '2024-02-01'
+    azure_api_version: str = '2024-02-01',
+    reference_file: str = None,
+    skip_local_validation: bool = False
 ) -> None:
     """
     Process all JSON files in the input directory and save analysis results to the output directory.
@@ -78,10 +80,15 @@ def process_batch(
             provider='azure',
             azure_endpoint=azure_endpoint,
             azure_deployment=azure_deployment,
-            azure_api_version=azure_api_version
+            azure_api_version=azure_api_version,
+            reference_file=reference_file
         )
     else:
-        analyzer = BOMAnalyzer(api_key=api_key, model=model)
+        analyzer = BOMAnalyzer(
+            api_key=api_key, 
+            model=model,
+            reference_file=reference_file
+        )
     
     # Find all JSON files in the input directory
     json_files = glob.glob(os.path.join(input_dir, "*.json"))
@@ -102,7 +109,10 @@ def process_batch(
                 order_data = json.load(f)
             
             # Analyze the order
-            analysis_results = analyzer.analyze_order(order_data)
+            analysis_results = analyzer.analyze_order(
+                order_data, 
+                use_local_validation=not skip_local_validation
+            )
             
             # Save analysis results to output directory
             output_file = os.path.join(output_dir, f"analysis_{file_name}")
@@ -175,6 +185,9 @@ def main():
     parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint URL')
     parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
     parser.add_argument('--azure-api-version', default='2024-02-01', help='Azure OpenAI API version')
+    parser.add_argument('--reference-file', help='Path to reference data CSV file for item validation')
+    parser.add_argument('--generate-reference', help='Generate sample reference data to specified file')
+    parser.add_argument('--skip-local-validation', action='store_true', help='Skip local item validation (use only AI analysis)')
     
     args = parser.parse_args()
     
@@ -195,7 +208,9 @@ def main():
             model=args.model,
             azure_endpoint=args.azure_endpoint,
             azure_deployment=args.azure_deployment,
-            azure_api_version=args.azure_api_version
+            azure_api_version=args.azure_api_version,
+            reference_file=args.reference_file,
+            skip_local_validation=args.skip_local_validation
         )
     else:
         parser.print_help()
