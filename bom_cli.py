@@ -1,0 +1,91 @@
+import json
+import os
+import argparse
+from typing import Dict, Any
+from bom_analyzer import BOMAnalyzer, generate_sample_orders
+
+def save_results(analysis: Dict[str, Any], filename: str) -> None:
+    """Save analysis results to a JSON file."""
+    with open(filename, 'w') as f:
+        json.dump(analysis, f, indent=2)
+    print(f"Analysis results saved to {filename}")
+
+def load_order(filename: str) -> Dict[str, Any]:
+    """Load order data from a JSON file."""
+    try:
+        with open(filename, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"File not found: {filename}")
+        return None
+    except json.JSONDecodeError:
+        print(f"Invalid JSON in file: {filename}")
+        return None
+
+def main():
+    parser = argparse.ArgumentParser(description='BOM Order Analyzer CLI')
+    parser.add_argument('--input', '-i', help='Input JSON file containing order data')
+    parser.add_argument('--output', '-o', help='Output file to save analysis results (JSON)')
+    parser.add_argument('--csv', help='Save analysis to CSV report file')
+    parser.add_argument('--sample', '-s', action='store_true', help='Generate and use sample data')
+    parser.add_argument('--clean', '-c', action='store_true', help='Generate clean sample data without issues')
+    parser.add_argument('--save-sample', help='Save generated sample to a file')
+    
+    args = parser.parse_args()
+    
+    # Check for API key
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("⚠️ OpenAI API key not found in environment variables.")
+        print("Please set your API key using: export OPENAI_API_KEY='your-api-key'")
+        api_key = input("Or enter your OpenAI API key now: ").strip()
+        if not api_key:
+            print("No API key provided. Exiting.")
+            return
+    
+    # Initialize the analyzer
+    analyzer = BOMAnalyzer(api_key)
+    
+    # Determine the order data source
+    order_data = None
+    
+    if args.input:
+        print(f"Loading order data from {args.input}...")
+        order_data = load_order(args.input)
+        if not order_data:
+            return
+    elif args.sample or args.clean or not args.input:
+        include_issues = not args.clean
+        status = "clean" if args.clean else "problematic"
+        print(f"Generating {status} sample BOM order data...")
+        order_data = generate_sample_orders(include_issues=include_issues)
+        
+        if args.save_sample:
+            with open(args.save_sample, 'w') as f:
+                json.dump(order_data, f, indent=2)
+            print(f"Sample data saved to {args.save_sample}")
+    
+    # Display the order data
+    print("\n📋 BOM Order Data:")
+    print(json.dumps(order_data, indent=2))
+    
+    # Analyze the order
+    print("\n🔍 Analyzing BOM order data...")
+    analysis_results = analyzer.analyze_order(order_data)
+    
+    # Display the analysis report
+    print("\n📊 Analysis Report:")
+    report = analyzer.format_analysis_report(analysis_results)
+    print(report)
+    
+    # Save results if requested
+    if args.output:
+        save_results(analysis_results, args.output)
+    
+    # Save to CSV if requested
+    if args.csv:
+        order_id = order_data.get("order_id", "unknown")
+        analyzer.save_analysis_to_csv(order_id, analysis_results, args.csv)
+
+if __name__ == "__main__":
+    main()
