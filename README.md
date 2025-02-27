@@ -164,10 +164,9 @@ python batch_processor.py --generate-samples 10 --csv consolidated_report.csv
 
 This application supports multiple model options:
 
-| Model | Provider | Description | Use Case |
-|-------|----------|-------------|----------|
-| o1-mini | Azure OpenAI | Basic analytical model | Simple validation tasks |
-| GPT-4o | Azure OpenAI | Full featured model available on Azure | Enterprise-grade validation with Azure security compliance |
+Model	Provider	Description	Use Case
+o1-mini	Azure OpenAI	A faster and more cost-effective variant within the o1 series, optimized for advanced reasoning tasks.	Ideal for complex code generation, advanced problem-solving, and intricate document comparison tasks.
+GPT-4o	Azure OpenAI	A comprehensive multimodal model integrating text, vision, and audio capabilities.	Suitable for enterprise-grade validation tasks requiring robust security compliance and diverse applications across various domains.
 
 To specify the model and provider:
 ```bash
